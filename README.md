@@ -49,7 +49,7 @@ Parameters
 Parameters can be replaced with your own values when standing up a stack. Use
 the `-P` flag to specify a custom parameter.
 
-* `server_hostname`: Hostname to set for the server (Default: DNN)
+* `server_hostname`: Hostname to set for the server (Default: Umbraco)
 * `image`: Operating System to use (Default: Windows Server 2008 R2 SP1)
 * `flavor`: Server size for your deployment (Default: 4 GB Performance)
 
@@ -64,38 +64,29 @@ Use `heat output-show <OUTPUT NAME>` to get the value fo a specific output.
 Stack Details
 =============
 #### Getting Started
-If you are new to DNN, the [DNN
-Community](http://www.dnnsoftware.com/community) has great ressources to
-get you started including a well maintained
-[Wiki](http://www.dnnsoftware.com/wiki). DNN provides [Professional
-Services and Training](http://www.dnnsoftware.com/solutions/services),
-and DNN Extensions are available through the [DNN
-Store](http://store.dnnsoftware.com/).
+If you are new to Umbraco, the [Umbraco
+Community](http://our.umbraco.org/forum) has great ressources to
+get you started. The documentation is available [here](http://our.umbraco.org/documentation).
+Umbraco provides [Training and Support](http://umbraco.com/help-and-support.aspx) and their
+[Video Library](http://umbraco.com/help-and-support/video-tutorials/getting-started/what-is-umbraco) is very informative.
 
-#### Logging into DNN
+#### Logging into Umbraco
 To login, use the IP address of the server or point an A record to your
 server's IP. The domain you provided has also been used to set the [host
 file](http://www.rackspace.com/knowledge_center/article/how-do-i-modify-my-hosts-file)
-on the server. Therefore you can open an RDP session to the server,
-open the domain in the web browser and pursue the last step of the DNN
+on the server. Therefore you can open a RDP session to the server,
+open the domain in the web browser and pursue the last step of the Umbraco
 site activation.
 
-Once you have the server's IP or the domain name open in the web browser,
-you must complete the Account information form and the Website
-information form. The Database Information section MUST remain unchanged
-because it has been configured in the connection string in the
-Web.config, and the database has been set to use the application pool
-identity.
-
 #### Additional Licensing
-DNN is open source under the [MIT
-Licence](https://dotnetnuke.codeplex.com/license).
+Umbraco is open source under the [MIT
+Licence](http://umbraco.com/products/license).
 
 #### Logging in via Remote Desktop
 The Administrator password is included in the passwords/secrets section
 of this deployment. Use that password and the instructions found
 [here](http://www.rackspace.com/knowledge_center/article/logging-in-to-your-server-via-rdp-windows)
-to login and begin managing DNN.
+to login and begin managing Umbraco.
 
 #### Uploading Files via FTP
 The FTP password is included in the passwords/secrets section
@@ -107,7 +98,12 @@ This setup was built through a [Powershell
 Script](http://technet.microsoft.com/en-us/scriptcenter/dd742419.aspx).
 Once the deployment is up, the script will not be run again, so it is
 safe to change settings and configurations on your server and within
-DNN.
+Umbraco.
+
+#### Post Installation Permissions check
+After the deployment, please verify Umbraco permissions check by opening
+following the instruction on the following wiki
+[article](http://our.umbraco.org/wiki/reference/files-and-folders/permissions/perform-permissions-check).
 
 Contributing
 ============
