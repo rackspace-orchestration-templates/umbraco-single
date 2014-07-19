@@ -1,0 +1,578 @@
+heat_template_version: 2013-05-23
+
+description: |
+  HEAT template for setting up Umbraco site in IIS with a FTP account on a single Windows
+  Server
+
+parameter_groups:
+
+- label: Server Settings
+  parameters:
+  - image
+  - flavor
+
+- label: Umbraco Application Settings
+  parameters:
+  - domain
+  - ftp_username
+  - server_hostname
+  - umbraco_version
+
+
+parameters:
+
+  # Server settings
+  server_hostname:
+    label: Server Hostname
+    description: Hostname to use for the server that's built.
+    type: string
+    default: Umbraco
+    description: Windows Server Name
+
+  image:
+    label: Operating System
+    description: |
+      Required: Server image used for all servers that are created as a part of
+      this deployment.
+    type: string
+    default: Windows Server 2012 + SQL Server 2012 SP1 Web
+    constraints:
+    - allowed_values:
+      - Windows Server 2012 + SQL Server 2012 SP1 Standard
+      - Windows Server 2012 + SQL Server 2012 SP1 Web
+      description: must be a supported OS
+
+  flavor:
+    label: Server Size
+    description: |
+      Cloud Server size to use for the database server. Sizes refer to the
+      amount of RAM allocated to the server.
+    type: string
+    default: 4 GB Performance
+    constraints:
+    - allowed_values:
+      - 2 GB Performance
+      - 4 GB Performance
+      - 8 GB Performance
+      - 15 GB Performance
+      - 30 GB Performance
+      - 2GB Standard Instance
+      - 4GB Standard Instance
+      - 8GB Standard Instance
+      - 15GB Standard Instance
+      - 30GB Standard Instance
+      description: must be a valid Rackspace Cloud Server flavor.
+
+  # Umbraco settings
+  domain:
+    label: Site Domain
+    description: Domain to be used with the Umbraco site
+    type: string
+    default: "example.com"
+    constraints:
+    - allowed_pattern: "^[a-zA-Z0-9.-]{1,255}.[a-zA-Z]{2,15}$"
+      description: Must be a valid domain name
+
+  ftp_username:
+    label: FTP Username
+    description: FTP Username for the site
+    type: string
+    default: "ftp_user"
+    constraints:
+    - allowed_pattern: "^(?!^root$)([a-z0-9_]{1,16})$"
+      description: Must be a valid username
+
+  umbraco_version:
+    label: Umbraco Version
+    description: Version of Umbraco to install.
+    type: string
+    default: 7.02.01
+
+resources:
+
+  rs_windows_server:
+    type: "Rackspace::Cloud::WinServer"
+    properties:
+      name: { get_param: server_hostname }
+      flavor: { get_param: flavor }
+      image: { get_param: image }
+      save_admin_pass: true
+      user_data:
+        str_replace:
+          template: |
+            #region Deployment of Umbraco CMS
+            Function Deploy-Umbraco(){
+                [CmdletBinding()]
+                Param(
+                    [String]$AdminUser = "administrator",
+                    [String]$AdminPassword = "Chan%%me1P",
+                    [String]$DomainName = "example.com",
+                    [String]$FtpSiteName = "FtpDefaultSite",
+                    [String]$FtpUserName = "ftpuser01",
+                    [String]$FtpPassword = "PaSSw0rd",
+                    #[String]$DatbaseName,
+                    #[String]$DatabaseUserName,
+                    #[String]$DatabasePassword
+                    #[switch]$installiis,
+                    #[switch]$installftp
+                    [String]$Logfile  = "C:\Windows\Temp\Deploy-Umbraco.log"
+                )
+                #region Create Log File
+                if (!( Test-Path $Logfile)){
+                    New-Item -Path "C:\Windows\Temp\Deploy-Umbraco.log" -ItemType file > $null
+                }
+                #endregion
+                #region Write Log file
+                Function WriteLog{
+                    Param ([string]$logstring)
+                    Add-content $Logfile -value $logstring
+                }
+                #endregion
+                #region Variables
+                $webRoot = "$env:systemdrive\inetpub\wwwroot\"
+                $webFolder = $webRoot + $DomainName
+                $appPoolName = $DomainName
+                $siteName = $DomainName
+                $databaseServerInstance = [System.Net.DNS]::GetHostName()
+                $databaseName = $DomainName + "001"
+                $fileSource = "http://c0593d48d49e2082002b-17f905e035e7a442a6b2959fcf272df7.r35.cf5.rackcdn.com/UmbracoCms.7.0.4.zip"
+                $tempFile = "$env:temp\Umbraco.zip"
+                $appPoolIdentity = "IIS AppPool\$appPoolName"
+                #endregion
+                #region Install IIS and ASP
+                Function Install-AspWebServer (){
+                  Write-Host "[$(Get-Date)] Installing IIS and ASP .Net"
+                  Import-Module servermanager
+                  Add-WindowsFeature Web-Server,Web-WebServer,Web-Common-Http,Web-Default-Doc,Web-Dir-Browsing,Web-Http-Errors,Web-Static-Content,Web-Http-Redirect,Web-Health,Web-Http-Logging,Web-Custom-Logging,Web-Log-Libraries,Web-ODBC-Logging,Web-Request-Monitor,Web-Http-Tracing,Web-Performance,Web-Stat-Compression,Web-Dyn-Compression,Web-Security,Web-Filtering,Web-Basic-Auth,Web-CertProvider,Web-Client-Auth,Web-Digest-Auth,Web-Cert-Auth,Web-IP-Security,Web-Url-Auth,Web-Windows-Auth,Web-App-Dev,Web-Net-Ext,Web-Net-Ext45,Web-AppInit,Web-ASP,Web-Asp-Net,Web-Asp-Net45,Web-CGI,Web-ISAPI-Ext,Web-ISAPI-Filter,Web-Includes,Web-WebSockets,Web-Mgmt-Tools,Web-Mgmt-Console,Web-Mgmt-Compat,Web-Metabase,Web-Lgcy-Mgmt-Console,Web-Scripting-Tools > $null
+                }
+                #endregion
+                #region Install FTP
+                Function Install-FTPserver () {
+                    Import-Module ServerManager
+                    $out = Add-WindowsFeature -Name Web-Ftp-Server -IncludeAllSubFeature
+                    if ($out.ExitCode -eq "NoChangeNeeded"){
+                        WriteLog "[$(Get-Date)] FTP server is already installed"
+                    }
+                    else {
+                        WriteLog "[$(Get-Date)] FTP Server and dependencies have been installed"
+                    }
+                }
+                #endregion
+                #region Create IIS WebSite
+                Function Create-Website ($webSiteName, $webSiteFolder, $webAppPoolName){
+                  try{
+                    WriteLog "[$(Get-Date)] Creating the $webSiteName"
+                    New-Item $webSiteFolder -type directory -Force *>> $Logfile
+                    Stop-Website -Name 'Default Web Site' *>> $Logfile
+                    New-WebAppPool $webAppPoolName *>> $Logfile
+                    New-Website -Name $webSiteName -Port 80 -IPAddress "*" -HostHeader $webSiteName -PhysicalPath $webSiteFolder -ApplicationPool $webAppPoolName -Force *>> $Logfile
+                    New-WebBinding -Name $webSiteName -Port 80 -IPAddress *
+                  }
+                  catch{
+                    throw "Error : $_"
+                  }
+                }
+                #endregion
+                #region Delete IIS Website
+                Function Remove-Website($webAppPoolName, $webSiteFolder, $webSiteName){
+                  try{
+                if($webSiteFolder -ne $null){
+                  if((Test-Path -PathType Container -path $webSiteFolder)){
+                    $siteStatus = get-website -Name $webSiteName
+                    $siteAppPoolStatus = Get-Item "IIS:\AppPools\$webSiteName"
+                    if((Get-WebsiteState -Name "$webSiteName").Value -ne "Stopped") {
+                      $siteStatus.Stop()
+                    }
+                    if((Get-WebAppPoolState -Name $webAppPoolName).Value -ne "Stopped") {
+                      $siteAppPoolStatus.Stop()
+                    }
+                    WriteLog "[$(Get-Date)] Removing the Web site $webSiteName"
+                    Remove-Website -Name $webSiteName *>> $Logfile
+                    WriteLog "[$(Get-Date)] Removing the Application pool $webAppPoolName"
+                    Remove-WebAppPool -Name $webAppPoolName *>> $Logfile
+                    WriteLog "[$(Get-Date)] Removing the Site Directory if $webAppPoolName"
+                    Remove-Item $webSiteFolder -Recurse -Force *>> $Logfile
+                  }
+                  else{
+                    WriteLog "[$(Get-Date)] The site $webSiteName is not present"
+                  }
+                }
+                }
+                  catch{
+                      throw "Error : $_"
+                  }
+                }
+                #endregion
+                #region Set Site Content
+                Function Set-SiteContent ($downloadLink, $downloadFolder,$webSiteFolder){
+                  try{
+                    WriteLog "[$(Get-Date)] Downloading Umbraco and unpacking it"
+                    #Remove-Item $downLoadFolder -Recurse -Force
+                    (New-Object System.Net.WebClient).DownloadFile($downloadLink, $downloadFolder )
+                    $sh = New-Object -com shell.application; $sh.namespace($webSiteFolder).Copyhere($sh.namespace($downloadFolder ).items())
+                  }
+                  catch{
+                    throw "Error : $_"
+                  }
+                }
+                #endregion
+                #region Create a Database
+                Function Set-DataBase ($dbServer, $dbName, $identity){
+                  try{
+                    WriteLog "[$(Get-Date)] Creating the Database $dbName and its permission"
+                    [System.Reflection.Assembly]::LoadWithPartialName('Microsoft.SqlServer.SMO') *>> $Logfile
+                    $server = New-Object Microsoft.SqlServer.Management.Smo.Server($dbServer)
+                    #$server.KillDatabase($dbName)
+                    $db = New-Object Microsoft.SqlServer.Management.Smo.Database($server, $dbName)
+                    $db.Create() *>> $Logfile
+                    #Remove-DatabaseUser $dbServer $dbName $identity
+                    $login = New-Object Microsoft.SqlServer.Management.Smo.Login($server, $identity)
+                    $login.DefaultDatabase = $dbName
+                    $login.LoginType = [Microsoft.SqlServer.Management.SMO.LoginType]::WindowsUser
+                    $login.Create() *>> $Logfile
+                    $user = New-Object Microsoft.SqlServer.Management.Smo.User($db, $identity)
+                    #$user.Drop();
+                    $user.Create() *>> $Logfile
+                    $db.Roles["db_owner"].AddMember($login.Name)
+                  }
+                  catch{
+                    throw "Error : $_"
+                  }
+                }
+                #endregion
+                #region Delete a Database
+                Function Remove-DatabaseUser($dbServer1, $dbName1, $identity1){
+                    [System.Reflection.Assembly]::LoadWithPartialName('Microsoft.SqlServer.SMO')
+                    $srv = New-Object Microsoft.SqlServer.Management.Smo.Server($dbServer1)
+                    $srv.KillDatabase($dbName1)
+                    #drop database users
+                    foreach($database in $srv.Databases){
+                        #foreach($login in $logins){
+                            if($database.Users.Contains($identity1)){
+                                $database.Users[$identity1].Drop();
+                            }
+                        #}
+                    }
+                    #drop server logins
+                    #foreach($login in $logins){
+                        if ($srv.Logins.Contains($identity1)){
+                            $srv.Logins[$identity1].Drop();
+                        }
+                    #}
+                }
+                #endregion
+                #region Set Application Database Connection String
+                Function Set-ConnectionString ($webSiteFolder, $dbServer, $dbName){
+                  try{
+                    WriteLog "[$(Get-Date)] Changing the Connection String in the Web.Config"
+                    $srv = "Server=" + $dbServer
+                    $db = "Database=" + $dbName
+                    $cs = "connectionString=" + '"' + $srv + ";" + $db + ";" + "Integrated Security=true" +'"'
+                    (Get-Content "$webSiteFolder\web.config") |
+                    Foreach-Object {$_ -replace 'connectionString=""', $cs} |
+                    Foreach-Object {$_ -replace 'providerName=""', 'providerName="System.Data.SqlClient"'} |
+                    Set-Content "$webSiteFolder\web.config"
+                    }
+                  catch{
+                    throw "Error : $_"
+                  }
+                }
+                #endregion
+                #region Set Folder Permission
+                Function Set-FolderPermission ($folderPath, $permission, $identity){
+                  try{
+                    WriteLog "[$(Get-Date)] Granting the $permission to $folderpath"
+                    $acl = Get-Acl "$folderPath"
+                    $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($identity, $permission, "ContainerInherit, ObjectInherit", "None", "Allow")
+                    $acl.SetAccessRule($rule)
+                    Set-Acl $folderPath $acl
+                  }
+                  catch{
+                    throw "Error : $_"
+                  }
+                }
+                #endregion
+                #region Create Self Signed Certificate
+                function New-SelfSignedCert{
+                    [CmdletBinding()]
+                    [OutputType([int])]
+                    Param
+                    (
+                        [Parameter(Mandatory=$true,
+                                   ValueFromPipeLine=$true,
+                                   Position=0)]
+                        [string[]]$Subject = "demo.demo.com"
+                        ,
+                        [Parameter(Mandatory=$true,
+                                   ValueFromPipelineByPropertyName=$true,
+                                   Position=1)]
+                        [ValidateSet("User","Computer")]
+                        [string]$CertStore = "Computer"
+                        ,
+                        [ValidateSet("Y","N")]
+                        [string]$EKU_ServerAuth =  "Y"
+                        ,
+                        [ValidateSet("Y","N")]
+                        [string]$EKU_ClientAuth =  "Y"
+                        ,
+                        [ValidateSet("Y","N")]
+                        [string]$EKU_SmartCardAuth =  "Y"
+                        ,
+                        [ValidateSet("Y","N")]
+                        [string]$EKU_EncryptFileSystem =  "Y"
+                        ,
+                        [ValidateSet("Y","N")]
+                        [string]$EKU_CodeSigning =  "Y"
+                        ,
+                        [ValidateSet("Y","N")]
+                        [string]$AsTrustedRootCert =  "N"
+                    )
+                    Begin{
+                        $ErrorActionPreference = "SilentlyContinue"
+                        If ($CertStore -eq "User"){
+                            $machineContext = 0
+                            $initContext = 1
+                        }
+                        ElseIF ($CertStore -eq "Computer"){
+                            $machineContext = 1
+                            $initContext = 2
+                        }
+                        Else{
+                            Write-Error "Invalid selection"
+                            Exit
+                        }
+                    }
+                    Process{
+                        $OS = (Get-WmiObject Win32_OperatingSystem).Version
+                        if ($OS[0] -ge 6) {
+                            foreach ($sub in $Subject){
+                                #Generate cert in local computer My store
+                                $name = new-object -com "X509Enrollment.CX500DistinguishedName.1"
+                                $name.Encode("CN=$sub", 0)
+                                $key = new-object -com "X509Enrollment.CX509PrivateKey.1"
+                                $key.ProviderName = "Microsoft RSA SChannel Cryptographic Provider"
+                                $key.KeySpec = 1
+                                $key.Length = 2048
+                                $key.SecurityDescriptor = "D:PAI(A;;0xd01f01ff;;;SY)(A;;0xd01f01ff;;;BA)(A;;0x80120089;;;NS)"
+                                $key.MachineContext = $machineContext
+                                $key.ExportPolicy = 1
+                                $key.Create()
+                                $ekuoids = new-object -com "X509Enrollment.CObjectIds.1"
+                                #Enhanced Key Usage `(EKU`) by answering Y/N
+                                If ($EKU_ServerAuth -eq "Y"){
+                                $serverauthoid = new-object -com "X509Enrollment.CObjectId.1"
+                                $serverauthoid.InitializeFromValue("1.3.6.1.5.5.7.3.1")
+                                $ekuoids.add($serverauthoid)
+                                }
+                                If ($EKU_ClientAuth -eq "Y"){
+                                $clientauthoid = new-object -com "X509Enrollment.CObjectId.1"
+                                $clientauthoid.InitializeFromValue("1.3.6.1.5.5.7.3.2")
+                                $ekuoids.add($clientauthoid)
+                                }
+                                If ($EKU_SmartCardAuth -eq "Y"){
+                                $smartcardoid = new-object -com "X509Enrollment.CObjectId.1"
+                                $smartcardoid.InitializeFromValue("1.3.6.1.4.1.311.20.2.2")
+                                $ekuoids.add($smartcardoid)
+                                }
+                                If ($EKU_EncryptFileSystem -eq "Y"){
+                                $efsoid = new-object -com "X509Enrollment.CObjectId.1"
+                                $efsoid.InitializeFromValue("1.3.6.1.4.1.311.10.3.4")
+                                $ekuoids.add($efsoid)
+                                }
+                                If ($EKU_CodeSigning -eq "Y"){
+                                $codesigningoid = new-object -com "X509Enrollment.CObjectId.1"
+                                $codesigningoid.InitializeFromValue("1.3.6.1.5.5.7.3.3")
+                                $ekuoids.add($codesigningoid)
+                                }
+                                $ekuext = new-object -com "X509Enrollment.CX509ExtensionEnhancedKeyUsage.1"
+                                $ekuext.InitializeEncode($ekuoids)
+                                $cert = new-object -com "X509Enrollment.CX509CertificateRequestCertificate.1"
+                                $cert.InitializeFromPrivateKey($initContext, $key, "")
+                                $cert.Subject = $name
+                                $cert.Issuer = $cert.Subject
+                                $cert.NotBefore = get-date
+                                $cert.NotAfter = $cert.NotBefore.AddDays(3650)
+                                $cert.X509Extensions.Add($ekuext)
+                                $cert.Encode()
+                                $enrollment = new-object -com "X509Enrollment.CX509Enrollment.1"
+                                $enrollment.InitializeFromRequest($cert)
+                                $certdata = $enrollment.CreateRequest(1)
+                                $enrollment.InstallResponse(2, $certdata, 1, "")
+                                Write-Verbose "$($sub) has been added the Certificate to the Store $($CertStore)"
+                                #Install the certificate to Trusted Root Certification Authorities
+                                if ($AsTrustedRootCert -eq "Y") {
+                                    [Byte[]]$bytes = [System.Convert]::FromBase64String($certdata)
+                                    foreach ($Store in "Root", "TrustedPublisher") {
+                                        $x509store = New-Object Security.Cryptography.X509Certificates.X509Store $Store, "LocalMachine"
+                                        $x509store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+                                        $x509store.Add([Security.Cryptography.X509Certificates.X509Certificate2]$bytes)
+                                        $x509store.Close()
+                                    }
+                                }
+                                Write-Verbose "$($sub) has been added the Certificate to the Store $($Store)"
+                            }
+                        }
+                        else{
+                            Write-Warning "The Operating System must be at LEAST Windows Server 2008"
+                        }
+                    }
+                    End{
+                    Write-Host "Completed :: New Certificate(s) Created and Installed" -ForegroundColor Green
+                    Write-Verbose "Execution finished..."
+                    }
+                }
+                #endregion
+                #region Create FTP Site
+                Function Create-FtpSite($DefaultFtpSiteName,$DefaultFtpUser,$DefaultFtpPassword){
+                Import-Module WebAdministration
+                $DefaultFtpPath = "c:\inetpub\wwwroot\"
+                $DefaultNonSecureFtpPort = 21
+                # Create FTP user Account
+                net user /add $DefaultFtpUser $DefaultFtpPassword *>> $Logfile
+                WriteLog "[$(Get-Date)] Completed '$DefaultFtpUser' creation"
+                New-WebFtpSite -Name $DefaultFtpSiteName -PhysicalPath $DefaultFtpPath  -Port $DefaultNonSecureFtpPort -IPAddress * *>> $Logfile
+                # Apply permissions to wwwroot Folder
+                $acl = (Get-Item $DefaultFtpPath).GetAccessControl("Access")
+                $rule = New-Object System.Security.AccessControl.FileSystemAccessRule($DefaultFtpUser,"Modify","ContainerInherit, ObjectInherit","None","Allow")
+                $acl.AddAccessRule($rule)
+                Set-Acl $DefaultFtpPath $acl
+                # Configure IIS Site Properties
+                Set-ItemProperty IIS:\Sites\$DefaultFtpSiteName -Name ftpServer.security.ssl.controlChannelPolicy -Value 0
+                Set-ItemProperty IIS:\Sites\$DefaultFtpSiteName -Name ftpServer.security.ssl.dataChannelPolicy -Value 0
+                Set-ItemProperty IIS:\Sites\$DefaultFtpSiteName -Name ftpServer.security.ssl.ssl128 -Value $true
+                Set-ItemProperty IIS:\Sites\$DefaultFtpSiteName -Name ftpServer.security.authentication.basicAuthentication.enabled -Value $true
+                # Add Allow rule for our ftpGroup (Permission=3 ==> Read+Write)
+                Add-WebConfiguration "/system.ftpServer/security/authorization"  -value @{accessType="Allow"; users=$DefaultFtpUser; permissions=3} -PSPath IIS:\ -location $DefaultFtpSiteName
+                # Change the lower and upper dataChannel ports
+                $firewallSupport = Get-WebConfiguration system.ftpServer/firewallSupport
+                $firewallSupport.lowDataChannelPort = 5001
+                $firewallSupport.highDataChannelPort = 5050
+                $firewallSupport | Set-WebConfiguration system.ftpServer/firewallSupport
+                New-SelfSignedCert -Subject $DefaultFtpSiteName -CertStore Computer -EKU_ServerAuth Y -EKU_ClientAuth Y -EKU_SmartCardAuth Y -EKU_EncryptFileSystem Y -EKU_CodeSigning Y -AsTrustedRootCert Y > $null
+                cd Microsoft.PowerShell.Security\Certificate::localmachine\my
+                $cert = Get-ChildItem | Where-Object {$_.subject -match $DefaultFtpSiteName } | select thumbprint | foreach { $_.thumbprint }
+                WriteLog "[$(Get-Date)] The certificate $cert is available"
+                Set-ItemProperty IIS:\Sites\$DefaultFtpSiteName -Name ftpServer.security.ssl.serverCertHash -Value $cert
+                WriteLog "[$(Get-Date)] Completed $DefaultFtpSiteName creation"
+                WriteLog "[$(Get-Date)] Disabling the Stateful FTP Firewall rule"
+                netsh advfirewall set global StatefulFTP disable *>> $Logfile
+                WriteLog "[$(Get-Date)] FTP service status"
+                Restart-Service ftpsvc *>> $Logfile
+            }
+                #endregion
+                #region Enable HTTP and HTTPS
+                Function Enable-WebServerFirewall(){
+                WriteLog "[$(Get-Date)] Enabling port 80"
+                netsh advfirewall firewall set rule group="World Wide Web Services (HTTP)" new enable=yes *>> $Logfile
+                WriteLog "[$(Get-Date)] Enabling port 443"
+                netsh advfirewall firewall set rule group="Secure World Wide Web Services (HTTPS)" new enable=yes *>> $Logfile
+              }
+                #endregion
+                #region Clean Deployment
+                Function Clean-Deployment{
+                    $hostsentry = Select-String $Env:SystemRoot\System32\drivers\etc\hosts -pattern "$DomainName" -quiet
+                    if (-not $hostsentry){
+                        Add-Content $Env:SystemRoot\System32\drivers\etc\hosts "127.0.0.1 $DomainName"
+                    }
+                    #region Remove Automation initial firewall rule opener
+                    if((Test-Path -Path 'C:\Cloud-Automation')){
+                        Remove-Item -Path 'C:\Cloud-Automation' -Recurse > $null
+                    }
+                    #endregion
+                    #region Schedule Task to remove the Psexec firewall rule
+                    $DeletePsexec = {
+                        #Remove-Item $MyINvocation.InvocationName
+                        $find_rule = netsh advfirewall firewall show rule "PSexec Port"
+                        if ($find_rule -notcontains 'No rules match the specified criteria.') {
+                            Write-Host "Deleting firewall rule"
+                            netsh advfirewall firewall delete rule name="PSexec Port" > $null
+                        }
+                    }
+                    $Cleaner = "C:\Windows\Temp\cleanup.ps1"
+                    Set-Content $Cleaner $DeletePsexec
+                    $ST_Username = "autoadmin"
+                    net user /add $ST_Username $FtpPassword
+                    net localgroup administrators $ST_Username /add
+                    $ST_Exec = "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+                    $ST_Arg = "-NoLogo -NonInteractive -WindowStyle Hidden -ExecutionPolicy ByPass C:\Windows\Temp\cleanup.ps1"
+                    $ST_A_Deploy_Cleaner = New-ScheduledTaskAction -Execute $ST_Exec -Argument $ST_Arg
+                    $ST_T_Deploy_Cleaner = New-ScheduledTaskTrigger -Once -At ((Get-date).AddMinutes(2))
+                    $ST_S_Deploy_Cleaner = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -WakeToRun -DontStopIfGoingOnBatteries -StartWhenAvailable -MultipleInstances Parallel
+                    #$ST_ST_Deploy_Cleaner = New-ScheduledTask -Action $ST_A_Deploy_Cleaner -Trigger $ST_T_Deploy_Cleaner -Settings $ST_S_Deploy_Cleaner
+                    Register-ScheduledTask -TaskName "Clean Automation" -TaskPath \ -RunLevel Highest -Action $ST_A_Deploy_Cleaner -Trigger $ST_T_Deploy_Cleaner -Settings $ST_S_Deploy_Cleaner -User $ST_Username -Password $FtpPassword *>> $Logfile
+                    #endregion
+                }
+                #endregion
+                #region Main
+                Install-AspWebServer
+                Install-FTPserver
+                Remove-WebSite $siteName $webFolder $appPoolName
+                Create-WebSite $siteName $webFolder $appPoolName
+                Set-SiteContent $fileSource $tempFile $webFolder
+                Set-DataBase $databaseServerInstance $databaseName $appPoolIdentity
+                Set-ConnectionString $webFolder $databaseServerInstance $databaseName
+                #$UmbracoFolderMod = "App_Code","App_Data","bin","Config","Css","MacroScripts","Masterpages","Media","Scripts","Umbraco","Umbraco_Client","UserControls","Xslt"
+                Set-FolderPermission $webFolder "Modify" $appPoolIdentity
+                Create-FtpSite $FtpSiteName $FtpUserName $FtpPassword
+                Enable-WebServerFirewall
+                Clean-Deployment
+                #endregion
+            }
+            #endregion
+            #region MAIN : Deploy Umbraco
+            #region Delete myself from the filesystem during execution
+            #Remove-Item $MyINvocation.InvocationName
+            #endregion
+            #region TESTING
+            #$test = "Cloud20"
+            #$testftp = "ftp" + $test
+            #Deploy-Umbraco -DomainName $test -FtpSiteName $testftp -FtpUserName $test -FtpPassword "Passw0!rd"
+            #$hostsentry = Select-String $Env:SystemRoot\System32\drivers\etc\hosts -pattern "$test" -quiet
+            #if (-not $hostsentry){
+            #    Add-Content $Env:SystemRoot\System32\drivers\etc\hosts "127.0.0.1 $test"
+            #}
+            #$ie = new-object -com "InternetExplorer.Application"
+            #$ie.Visible = $true
+            #$ie.Navigate("http://$test/")
+            #endregion
+            Deploy-Umbraco -DomainName "%%domain_name" -FtpUserName "%%ftp_username" -FtpPassword "%%ftp_password"
+            #endregion
+          params:
+            "%%domain_name" : { get_param:  domain }
+            "%%ftp_username" : { get_param: ftp_username }
+            "%%ftp_password" : { get_attr: [ftp_password,value] }
+
+  # Random password generation
+  ftp_password:
+    type: OS::Heat::RandomString
+    properties:
+      length: 14
+      character_classes:
+        - class: digits
+          min: 1
+        - class: uppercase
+          min: 1
+        - class: lowercase
+          min: 1
+
+outputs:
+
+  server_ip:
+    value: { get_attr: [ rs_windows_server, accessIPv4 ] }
+    description: Server IP
+
+  admin_password:
+    value: { get_attr: [ rs_windows_server, admin_pass] }
+    description: Administrator Password
+
+  site_domain:
+    description: Website Domain name
+    value: { get_param: domain }
+
+  site_ftp_user:
+    description: FTP User
+    value: { get_param: ftp_username }
+
+  site_ftp_password:
+    description: FTP Password
+    value: { get_attr: [ftp_password, value] }
