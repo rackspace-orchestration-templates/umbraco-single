@@ -1,7 +1,7 @@
 schema-version: 1.0.0
 application-family: Application Frameworks
 application-name: Umbraco
-flavor: Single Windows Server running Umbraco
+flavor: Single Windows Server
 flavor-weight: 3
 reach-info:
   icon-20x20: https://600861890ddb34a8670a-744765205721eed93c384dae790e86aa.ssl.cf2.rackcdn.com/umbraco-icon-20x20.png
