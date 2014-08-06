@@ -6,6 +6,9 @@ flavor-weight: 3
 reach-info:
   icon-20x20: https://600861890ddb34a8670a-744765205721eed93c384dae790e86aa.ssl.cf2.rackcdn.com/umbraco-icon-20x20.png
   tattoo: https://600861890ddb34a8670a-744765205721eed93c384dae790e86aa.ssl.cf2.rackcdn.com/umbraco-tattoo.png
+hidden_outputs:
+  - admin_password
+  - site_ftp_password
 abstract: A single Windows server running Umbraco on IIS with ASP .Net 4.5 and a FTP site enabled.
 instructions: |
   #### Getting Started
