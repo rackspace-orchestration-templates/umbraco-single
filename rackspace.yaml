@@ -52,3 +52,4 @@ instructions: |
   After the deployment, please verify Umbraco permissions check by opening
   following the instruction on the following wiki
   [article](http://our.umbraco.org/wiki/reference/files-and-folders/permissions/perform-permissions-check).
+user-input-required: true
