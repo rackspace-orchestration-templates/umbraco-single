@@ -53,3 +53,6 @@ instructions: |
   following the instruction on the following wiki
   [article](http://our.umbraco.org/wiki/reference/files-and-folders/permissions/perform-permissions-check).
 user-input-required: true
+description: |
+  A single Windows server running [Umbraco](http://umbraco.com/)
+  (default version of 7.02.01) on IIS with ASP.Net 4.5 and a FTP site enabled.
