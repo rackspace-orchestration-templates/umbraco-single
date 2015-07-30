@@ -9,7 +9,8 @@ reach-info:
 hidden_outputs:
   - admin_password
   - site_ftp_password
-abstract: A single Windows server running Umbraco on IIS with ASP .Net 4.5 and a FTP site enabled.
+abstract: |
+  Umbraco is an open-source content management system written in ASP.NET.
 instructions: |
   #### Getting Started
   If you are new to Umbraco, the [Umbraco
