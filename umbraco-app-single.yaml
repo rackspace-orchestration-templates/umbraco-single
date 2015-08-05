@@ -1,8 +1,8 @@
 heat_template_version: 2013-05-23
 
 description: |
-  HEAT template for setting up Umbraco site in IIS with a FTP account on a single Windows
-  Server
+  A single Windows server running [Umbraco](http://umbraco.com/)
+  (default version of 7.02.01) on IIS with ASP.Net 4.5 and a FTP site enabled.
 
 parameter_groups:
 
