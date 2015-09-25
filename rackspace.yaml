@@ -1,5 +1,5 @@
 schema-version: 1.0.0
-application-family: Application Frameworks
+application-family: CMS
 application-name: Umbraco
 flavor: Single Windows Server
 flavor-weight: 3
